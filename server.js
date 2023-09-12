@@ -1,3 +1,5 @@
+// ENV package
+require("dotenv").config();
 // Load express
 const express = require("express");
 
@@ -7,18 +9,47 @@ const app = express();
 // Define server port
 const PORT = process.env.PORT || 3000;
 
-// 'Import' fruits
-const fruits = require("./models/fruits");
+// 'Import' fruit
+const Fruit = require("./models/fruit");
+// check that this is working
+// console.dir(Fruit);
+
+// Import mongoose (will do this w/every app)
+const mongoose = require("mongoose");
+
+// TO ALLOW DELETE WITH FORM ELEMENTS (NON-DEFAULT BEHAVIOR)
+// ORDER MATTERS WHEN THERE IS A DEPENDENCY
+const methodOverride = require("method-override");
+
+// DB Connection (from DAY 3 Slides)
+mongoose.connect(process.env.MONGO_URI, {
+  useNewUrlParser: true,
+  useUnifiedTopology: true,
+  // Got error. Josh said delete this line
+  // useCreateIndex: true,
+});
+mongoose.connection.once("open", () => {
+  console.log("Connected to MongoDB");
+});
+
+// MAKE SURE dotenv is working
+// console.log(process.env.ENVVAR);
 
 // Different from slides
 // Didn't have to invoke yesterday because we created the function.
 // Here it's a built-in method
 const jsxViewEngine = require("jsx-view-engine");
-const vegetables = require("./models/vegetables");
+const vegetables = require("./models/vegetable");
 // VIEWS ENGINE DEFAULT SETTING: LOOKS FOR JSX
 app.set("view engine", "jsx");
 // Invoke App Engine
 app.engine("jsx", jsxViewEngine());
+
+// CSS IMPORT
+// Serves static files (CSS) from the /public directory
+// Needs to go before any routes
+// Grouped with app.use stuff
+app.use(express.static("public"));
 
 // MIDDLEWARE (needs to run first)
 //near the top, around other app.use() calls
@@ -33,66 +64,143 @@ app.use((req, res, next) => {
 // Gives access to req.body
 app.use(express.urlencoded({ extended: false }));
 
+// DELETE MIDDLEWARE
+// After app has been defined
+// Use methodOverride.
+// Will add a query param to our delete form named _method
+app.use(methodOverride("_method"));
+
+// 0a. SEED route (for testing)
+// Populates your DB
+// Would probably use a seed script IRL
+// Comment out after working
+/* 
+app.get('/fruits/seed', async (req, res) => {
+  try {
+    await Fruit.create([
+      {
+        name: 'grapefruit',
+        color: 'pink',
+        readyToEat: true
+      },
+      {
+        name: 'grape',
+        color: 'purple',
+        readyToEat: false
+      },
+      {
+        name: 'avocado',
+        color: 'green',
+        readyToEat: true
+      }
+    ]);
+    res.redirect('/fruits');
+  } catch (err) {
+    res.status(400).send(err);
+  }
+})
+*/
+
 // 1a. "I" FRUITS (index) route
-app.get("/fruits", (req, res) => {
-  //Shows middleware
-  console.log("Index controller");
-  // res.send(fruits);
-  // Change to use the view engine
-  res.render("fruits/Index", { fruits }); // shorthand JSX sets key and value to var name
-  // })
+// DELETED A BUNCH 9/7
+// Added async/await & try/catch
+app.get("/fruits", async (req, res) => {
+  try {
+    // Finds all fruit documents
+    const foundFruits = await Fruit.find({});
+    console.log(foundFruits);
+    res.status(200).render("fruits/Index", {
+      fruits: foundFruits,
+    });
+  } catch (err) {
+    res.status(400).send(err);
+  }
 });
 
 // 1b. "I" VEGGIES (index) route
-app.get("/vegetables", (req, res) => {
-  // res.send(fruits);
-  // Change to use the view engine
-  res.render("vegetables/Index", { vegetables }); // shorthand JSX sets key and value to var name
-  // })
+// LAB WORK, TO MIRROR 1A
+app.get("/vegetables", async (req, res) => {
+  try {
+    // Finds all fruit documents
+    const foundVegetables = await Vegetable.find({});
+    console.log(foundVegetables);
+    res.status(200).render("vegetables/Index", {
+      fruits: foundVegetables,
+    });
+  } catch (err) {
+    res.status(400).send(err);
+  }
 });
 
 // 2a. "N" NEW FRUIT route (has to be before show, INDUCES)
 app.get("/fruits/new", (req, res) => {
   console.log("New controller");
-  res.render("fruits/New", { fruits });
+  res.render("fruits/New");
 });
 
 // 2b. "N" NEW VEG route (has to be before show, INDUCES)
 app.get("/vegetables/new", (req, res) => {
   console.log("New controller");
-  res.render("vegetables/New", { fruits });
+  res.render("vegetables/New");
 });
 
 // 3a. "D" DELETE FRUIT route
+// Need an async/await (not the callback in the slides)
+app.delete("/fruits/:id", async (req, res) => {
+  try {
+    // DB Delete (not the DB _id)
+    await Fruit.findByIdAndDelete(req.params.id);
+    // Redirect refreshes page
+    // Remember this is a route not a path (initially it went to fruits/fruits)
+    res.status(200).redirect("/fruits");
+  } catch (err) {
+    res.status(400).send(err);
+  }
+});
+
 // 3a. "D" DELETE VEG route
+// app.delete("/vegetables/:id", (req, res) => {
+//   res.send("Deleting...");
+// });
 
 // 4a. "U' UPDATE FRUIT route
+app.put("/fruits/:id", async (req, res) => {
+  // IF UPDATES THE CHECKED PROPERTY / ELSE UPDATES THE REST
+  try {
+    if (req.body.readyToEat === "on") {
+      req.body.readyToEat = true;
+    } else {
+      req.body.readyToEat = false;
+    }
+    // ID is from the URL clicked on the edit page, (FORM BODY), also links to DB
+    const updatedFruit = await Fruit.findByIdAndUpdate(
+      req.params.id,
+      req.body,
+      { new: true }
+    );
+    res.redirect(`/fruits/${req.params.id}`);
+  } catch (err) {
+    res.status(400).send(err);
+  }
+});
 // 4b. "U' UPDATE VEG route
 
 // 5a. "C" CREATE FRUIT route (can use the same route because different method)
-app.post("/fruits", (req, res) => {
+// AFTER ADDING MONGOOSE, WE HAVE TO GO OFF SLIDES (v7 dropped callbacks)
+// HAVE TO USE .then or async/await (DELETED A BUNCH OF CODE & NOTES)
+app.post("/fruits", async (req, res) => {
   // Logs the post object (thru middleware) in the terminal
   console.log(req.body);
-  // WENT OFF SCRIPT, DID A TERNARY
-  //   if (req.body.readyToEat === "on") {
-  //     //if checked, req.body.readyToEat is set to 'on'
-  //     req.body.readyToEat = true; //do some data correction
-  //   } else {
-  //     //if not checked, req.body.readyToEat is undefined
-  //     req.body.readyToEat = false; //do some data correction
-  //   }
-
-  // TERNARY OF THE ABOVE CONDITIONAL (CAN EVEN OMIT THE TERNARY, JOSH FANCINESS, DIDN'T UNDERSTAND)
-  // THE CONDITION ITSELF RETURNS TRUE OR FALSE, WHICH IS WHY YOU CAN OMIT THE TERNARY
-  // REQUEST GOES TO THE POST/CREATE ROUTE (ROUTE IS THE PATH AND THE METHOD TOGETHER)
-  req.body.readyToEat = req.body.readyToEat === "on" ? true : false;
-  fruits.push(req.body);
-  console.log(fruits);
-  // This "we got the data" page is not really user-friendly. We want to see the web page
-  // res.send("We got the data");
-
-  // Send the user back to /fruits
-  res.redirect("/fruits");
+  try {
+    req.body.readyToEat = req.body.readyToEat === "on";
+    // https://mongoosejs.com/docs/models.html#constructing-documents
+    // https://www.geeksforgeeks.org/mongoose-schematype-options/#
+    // Takes an object that follows your schema
+    const createdFruit = await Fruit.create(req.body);
+    res.status(201).redirect("/fruits");
+  } catch (err) {
+    res.status(400).send(err);
+  }
 });
 
 // 5b. "C" CREATE VEG route (can use the same route because different method)
@@ -105,18 +213,35 @@ app.post("/vegetables", (req, res) => {
 });
 
 // 8a. "E" EDIT FRUIT route
+app.get("/fruits/:id/edit", async (req, res) => {
+  try {
+    // Find DOC in DB & UPDATE
+    const foundFruit = await Fruit.findById(req.params.id);
+    // Render EDIT page (we need to make this first)
+    res.render("fruits/Edit", {
+      fruit: foundFruit,
+    });
+  } catch (err) {
+    res.status(400).send(err);
+  }
+});
+
 // 8a. "E" EDIT VEG route
 
 // 7a. "S" SHOW route (no data persists here)
-app.get("/fruits/:id", (req, res) => {
-  // SSR version of passing props.
-  // This is passing props. Add props in 'Show.jsx'
-  res.render("fruits/Show", {
-    fruit: fruits[req.params.id],
-  });
+app.get("/fruits/:id", async (req, res) => {
+  try {
+    const foundFruit = await Fruit.findById(req.params.id);
+    res.render("fruits/Show", {
+      fruit: foundFruit,
+    });
+  } catch (err) {
+    res.status(400).send(err);
+  }
 });
 
 // 7b. "S" SHOW route (no data persists here)
+// Dels
 app.get("/vegetables/:id", (req, res) => {
   // SSR version of passing props.
   // This is passing props. Add props in 'Show.jsx'
@@ -145,6 +270,12 @@ https://ps-rtt-sei.herokuapp.com/15-week/mod-3/week-12/day-1/slides/
 2. New and Create Routes
 https://ps-rtt-sei.herokuapp.com/15-week/mod-3/week-12/day-2/slides/
 
+3. MongoDB Slides
+https://ps-rtt-sei.herokuapp.com/15-week/mod-3/week-12/day-3/slides/
+
+4. React Layouts
+https://ps-rtt-sei.herokuapp.com/15-week/mod-3/week-13/day-1/slides/
+
 CODE ALONG (DAY 1)
 https://pscohorts.slack.com/archives/C056A692JAX/p1693511684080759
 
@@ -154,8 +285,100 @@ https://pscohorts.slack.com/archives/C056A692JAX/p1693579804180239
 CODE ALONG (DAY 3)
 https://pscohorts.slack.com/archives/C056A692JAX/p1693924679459259?thread_ts=1693924655.297689&cid=C056A692JAX
 
+CODE ALONG (DAY 4)
+https://pscohorts.slack.com/archives/C056A692JAX/p1694105916642769
+
+CODE ALONG (DAY 5 - LAYOUTS)
+
+
+
 WEEK 12 DAY 1 COMMENTS
-===============
+=======================
+LAYOUT, DELETE, EDITING (MAYBE DEPLOY)
+TODAY, WE'LL MAKE A HIGHER ORDER COMPONENT THAT ACCEPTS CHILDREN (PROPS)
+
+1. Make a LAYOUT directory and a Default.jsx for the layout.
+
+To be able to delete and work around button not being able to delete, need to POST/GET
+Method override npm package can get around it.
+npm i method-override
+
+2. Final thing after adding CSS and adding lines to package.json
+
+Package.json
+
+Add a new object at the end:
+"engines": {
+    "node": "20.5.1"
+  }
+  
+Under "scripts"
+Last line (add comma)
+"build": "npm i"
+
+RENDER ACCOUNT (CREATE ONE USE GITHUB)
+https://dashboard.render.com/
+Create a new Web Service
+Paste your GitHub URL (after you push CRUD code, I haven't yet)
+
+Name: no spaces
+Runtime: node
+Build: npm run build
+Start: node server.js
+(nodemon is dev, this is production)
+
+Advanced button:
+Add .env variable
+Put the key and value from your .env file
+Key is MONGO_URI, Value is the rest
+
+
+WEEK 11 DAY 2 COMMENTS
+=======================
+Mongoose is the JS Library we use to interact with / communicate with MongoDB.
+Can also use Atlas & the command line.
+Mongoose works by defining schemas that get compiled into models.
+They perform CRUD operations.
+
+GET DOTENV PACKAGE (NPM)
+npm i dotenv
+Check in package.json for it
+Make a new line in .gitignore to ignore .env
+Touch .env
+Put placeholder in .env file ("ENVVAR=thisisavariablefrommy.envfile") and save
+
+Top of server.js (to read .env files in your server)
+// ENV package
+require("dotenv").config();
+
+// MAKE SURE dotenv is working
+console.log(process.env.ENVVAR);
+
+Go to your MongoDB Cluster
+Connect using "Driver"
+Copy the connection string
+In .env, add a line
+MONGO_URI=mongodb+srv://andrewdoak:<password>@clusterone.z741vjw.mongodb.net/fruitsPortal?retryWrites=true&w=majority
+"fruitsPortal" goes in between /? in the URI
+Put your db password between the carets <> (no more carets, that is)
+Mine is saved UNDER my login in 1P
+
+CONNECT TO MONGOOSE
+npm i mongoose
+
+MODELS FOLDER
+Deleting everything in fruits.js MODELS.
+Changed filename to fruit.js
+Make a schema
+
+READ FRUIT
+Index route
+
+CHECK NEW DB ENTRY
+https://cloud.mongodb.com/v2/5a2ec2eed383ad5c553a873f#/metrics/replicaSet/64f7764af383d97e47751493/explorer/fruitsPortal/fruits/find
+
+WEEK 12 DAY 1 COMMENTS
+=======================
 ADDED TO PACKAGE.JSON (WATCHES FOR CHANGES IN THE BELOW, NO SERVER RESTART NEEDED)
 "dev": "nodemon --ext js, jsx, json"
 

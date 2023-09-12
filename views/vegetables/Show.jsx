@@ -4,6 +4,8 @@ const React = require("react");
 
 class Show extends React.Component {
   render() {
+    // TODO: destructure (replace "vegetables")
+    // const {name, color, readyToEat, img }
     const vegetables = this.props.vegetables;
 
     return (
